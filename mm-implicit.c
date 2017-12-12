@@ -77,7 +77,7 @@ static void *coalesce(void *ptr);
 static void *extend_heap(size_t words);
 static void *find_fit(size_t asize);
 static void place(void *bp, size_t asize);
-
+static char *next_fits;
 /*
  * Initialize: return -1 on error, 0 on success.
  */
@@ -92,13 +92,14 @@ int mm_init(void) {
 	PUT(heap_listp + DSIZE, PACK(OVERHEAD, 1)); // prologue footer
 	PUT(heap_listp + WSIZE + DSIZE, PACK(0, 1)); // epilogue header
 	heap_listp += DSIZE;
-
+	
 	/*Extend the empty heap with a free block of CHUNKSIZE bytes*/
 	if ((extend_heap(CHUNKSIZE / WSIZE)) == NULL)
 		// 생성된 empty heap을 free block으로 확장
 		// WSIZE로 align 되어있지 않으면 에러
 		return -1;
 
+	next_fits = heap_listp; // heap 영역의 시작 주소를 next_fits에 저장
     return 0;
 }
 
@@ -148,7 +149,8 @@ void free (void *ptr) {
 	PUT(HDRP(ptr), PACK(size, 0)); // ptr의 header에 block size와 alloc = 0 저장
 	PUT(FTRP(ptr), PACK(size, 0)); // ptr의 footer에 block size와 alloc = 0 저장
 	
-	coalesce(ptr); // 주위에 빈 블록이 있을 시 병합
+	next_fits = coalesce(ptr); // 주위에 빈 블록이 있을 시 병합
+								// next_fit에 병합한 것을 저장
 }
 
 static void *extend_heap(size_t words){
@@ -272,7 +274,6 @@ void *calloc (size_t nmemb, size_t size) {
 
 static void place(void *bp, size_t asize){
 	size_t csize = GET_SIZE(HDRP(bp));
-
 	if ((csize - asize) >= (2*DSIZE)){
 		PUT(HDRP(bp), PACK(asize, 1));
 		PUT(FTRP(bp), PACK(asize, 1));
@@ -280,7 +281,6 @@ static void place(void *bp, size_t asize){
 		PUT(HDRP(bp), PACK(csize - asize, 0));
 		PUT(FTRP(bp), PACK(csize - asize, 0));
 	}
-	
 	else {
 		PUT(HDRP(bp), PACK(csize, 1));
 		PUT(FTRP(bp), PACK(csize, 1));
@@ -302,10 +302,10 @@ static int aligned(const void *p) {
     return (size_t)ALIGN(p) == (size_t)p;
 }
 static void *find_fit(size_t asize){
-	/* First-fit search */
+	/* Next-fit search */
 	void *bp;
 	
-	for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)){
+	for (bp = next_fits; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)){
 		if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))){
 			return bp;
 		}
